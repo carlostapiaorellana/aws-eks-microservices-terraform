@@ -1,4 +1,4 @@
-# Laboratorio 5 — IT Support System en AWS
+# IT Support System en AWS
 
 Sistema de tickets con 3 microservicios en EKS, desplegado con Terraform + GitHub Actions.
 
