@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: it-support-ingress
+  namespace: default
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /api/tickets/health
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /api/tickets
+            pathType: Prefix
+            backend:
+              service:
+                name: tickets-api
+                port:
+                  number: 80
+          - path: /api/files
+            pathType: Prefix
+            backend:
+              service:
+                name: files-api
+                port:
+                  number: 80
+          - path: /api/metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: metrics-api
+                port:
+                  number: 80

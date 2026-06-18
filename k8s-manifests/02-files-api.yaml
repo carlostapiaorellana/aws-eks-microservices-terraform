@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: files-api
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: files-api
+  template:
+    metadata:
+      labels:
+        app: files-api
+    spec:
+      serviceAccountName: files-api-sa
+      containers:
+        - name: files-api
+          image: 720472223188.dkr.ecr.us-east-1.amazonaws.com/lab-it-support-lab/files-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: ATTACHMENTS_BUCKET
+              value: lab-it-support-lab-attachments-02fd6c1c
+          readinessProbe:
+            httpGet:
+              path: /api/files/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: files-api
+  namespace: default
+spec:
+  selector:
+    app: files-api
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

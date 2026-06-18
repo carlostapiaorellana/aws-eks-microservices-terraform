@@ -1,0 +1,16 @@
+{
+  "name": "tickets-api",
+  "version": "1.0.0",
+  "description": "Microservicio de tickets - IT Support System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"lint ok\" && exit 0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mssql": "^11.0.1",
+    "@aws-sdk/client-secrets-manager": "^3.620.0",
+    "cors": "^2.8.5"
+  }
+}

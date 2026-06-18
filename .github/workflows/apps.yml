@@ -1,0 +1,80 @@
+name: 'Apps - Build & Deploy'
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'k8s-manifests/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_PREFIX: lab-it-support-lab
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [tickets-api, files-api, metrics-api]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: |
+          cd app/${{ matrix.service }}
+          docker build -t ${{ matrix.service }}:${{ github.sha }} .
+
+      # Escaneo de seguridad con Trivy ANTES de pushear
+      - name: Trivy security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.service }}:${{ github.sha }}
+          format: table
+          exit-code: '0'         # '1' para bloquear si hay vulnerabilidades
+          severity: CRITICAL,HIGH
+
+      - name: Tag & Push to ECR
+        run: |
+          REPO=${{ steps.ecr.outputs.registry }}/${{ env.ECR_PREFIX }}/${{ matrix.service }}
+          docker tag ${{ matrix.service }}:${{ github.sha }} $REPO:${{ github.sha }}
+          docker tag ${{ matrix.service }}:${{ github.sha }} $REPO:latest
+          docker push $REPO:${{ github.sha }}
+          docker push $REPO:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name lab-it-support-lab-eks
+
+      - name: Rollout restart (pull latest images)
+        run: |
+          kubectl rollout restart deployment/tickets-api
+          kubectl rollout restart deployment/files-api
+          kubectl rollout restart deployment/metrics-api
+          kubectl rollout status deployment/tickets-api --timeout=120s

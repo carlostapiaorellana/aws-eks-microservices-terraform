@@ -1,0 +1,110 @@
+name: 'Infra - Destroy'
+
+on:
+  # Solo se puede disparar MANUALMENTE desde GitHub
+  # Nunca se dispara por un push automático
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: 'Escribe DESTRUIR para confirmar'
+        required: true
+        type: string
+      motivo:
+        description: 'Por qué estás destruyendo (para el log)'
+        required: false
+        type: string
+        default: 'Fin de lab'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar confirmación
+        run: |
+          if [ "${{ github.event.inputs.confirmar }}" != "DESTRUIR" ]; then
+            echo "❌ Confirmación incorrecta. Escribe exactamente: DESTRUIR"
+            exit 1
+          fi
+          echo "✅ Confirmación válida. Procediendo con el destroy..."
+
+  destroy:
+    needs: validar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: aws eks update-kubeconfig --region us-east-1 --name lab-it-support-lab-eks || echo "Cluster no disponible, continuando..."
+
+      - name: Eliminar Ingress (libera el ALB antes del destroy)
+        run: |
+          kubectl delete ingress it-support-ingress -n default --ignore-not-found=true || true
+          echo "Esperando 60s para que el ALB se elimine..."
+          sleep 60
+
+      - name: Vaciar repos ECR (necesario antes de destruir)
+        run: |
+          for repo in tickets-api files-api metrics-api; do
+            echo "Limpiando ECR: lab-it-support-lab/$repo"
+            aws ecr batch-delete-image \
+              --repository-name "lab-it-support-lab/$repo" \
+              --region us-east-1 \
+              --image-ids "$(aws ecr list-images --repository-name lab-it-support-lab/$repo --region us-east-1 --query 'imageIds' --output json)" \
+              2>/dev/null || echo "Repo vacío o no existe"
+          done
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+
+      - name: Verificar que no quedan recursos
+        run: |
+          echo "=== VPCs del lab ==="
+          aws ec2 describe-vpcs --region us-east-1 \
+            --filters "Name=tag:Project,Values=lab-it-support" \
+            --query "Vpcs[*].[VpcId,CidrBlock]" --output table || true
+
+          echo "=== EKS clusters ==="
+          aws eks list-clusters --region us-east-1 --output text || true
+
+          echo "=== RDS instances ==="
+          aws rds describe-db-instances --region us-east-1 \
+            --query "DBInstances[?contains(DBInstanceIdentifier,'lab-it-support')].[DBInstanceIdentifier,DBInstanceStatus]" \
+            --output table || true
+
+      - name: Resumen final
+        run: |
+          echo "================================================"
+          echo "✅ Destroy completado"
+          echo "Motivo: ${{ github.event.inputs.motivo }}"
+          echo "Ejecutado por: ${{ github.actor }}"
+          echo "Fecha: $(date -u)"
+          echo "================================================"
+          echo ""
+          echo "⚠️  El bootstrap (S3 state + DynamoDB) NO fue destruido."
+          echo "Si quieres destruirlo, hazlo manualmente:"
+          echo "  cd bootstrap && terraform destroy"

@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-api
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: metrics-api
+  template:
+    metadata:
+      labels:
+        app: metrics-api
+    spec:
+      serviceAccountName: metrics-api-sa
+      containers:
+        - name: metrics-api
+          image: 720472223188.dkr.ecr.us-east-1.amazonaws.com/lab-it-support-lab/metrics-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AWS_REGION
+              value: us-east-1
+            - name: DB_SECRET_ARN
+              value: arn:aws:secretsmanager:us-east-1:720472223188:secret:lab-it-support-lab-mssql-credentials-g0t3V8
+          readinessProbe:
+            httpGet:
+              path: /api/metrics/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-api
+  namespace: default
+spec:
+  selector:
+    app: metrics-api
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

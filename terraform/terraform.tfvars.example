@@ -1,0 +1,8 @@
+project_name = "lab-it-support"
+environment  = "lab"
+aws_region   = "us-east-1"
+owner        = "TU-NOMBRE"
+github_org   = "TU-USUARIO-GITHUB"
+github_repo  = "NOMBRE-DEL-REPO"
+alert_email  = "[email protected]"
+budget_limit_usd = 50

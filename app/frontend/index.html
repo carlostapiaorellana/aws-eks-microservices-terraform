@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT Support System - AWS</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a1628; color: #e6edf3; padding: 2rem; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 2rem; margin-bottom: 1.5rem; }
+  .tag { background: #1f6feb; padding: .2rem .6rem; border-radius: .4rem; font-size: .9rem; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: .6rem; padding: 1.5rem; margin-bottom: 1.5rem; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
+  .metric { background: #1c2128; border-radius: .5rem; padding: 1rem; text-align: center; }
+  .metric .num { font-size: 2rem; font-weight: bold; color: #58a6ff; }
+  .metric .lbl { font-size: .85rem; color: #8b949e; }
+  form { display: flex; gap: .8rem; flex-wrap: wrap; align-items: center; }
+  input, select { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: .6rem; border-radius: .4rem; }
+  input { flex: 1; min-width: 150px; }
+  button { background: #1f6feb; color: #fff; border: none; padding: .6rem 1.2rem; border-radius: .4rem; cursor: pointer; }
+  button:hover { background: #388bfd; }
+  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+  th, td { text-align: left; padding: .8rem; border-bottom: 1px solid #30363d; }
+  th { color: #8b949e; font-size: .85rem; }
+  .badge { padding: .2rem .6rem; border-radius: 1rem; font-size: .8rem; }
+  .alta { background: #da3633; } .media { background: #bb8009; } .baja { background: #238636; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>IT Support System <span class="tag">Lab 5 · AWS</span></h1>
+
+  <div class="card">
+    <h3 style="margin-bottom:1rem">Dashboard</h3>
+    <div class="metrics" id="metrics">
+      <div class="metric"><div class="num" id="m-total">-</div><div class="lbl">Total</div></div>
+      <div class="metric"><div class="num" id="m-abiertos">-</div><div class="lbl">Abiertos</div></div>
+      <div class="metric"><div class="num" id="m-cerrados">-</div><div class="lbl">Cerrados</div></div>
+      <div class="metric"><div class="num" id="m-alta">-</div><div class="lbl">Prioridad Alta</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:1rem">Abrir Nuevo Ticket</h3>
+    <form id="ticketForm">
+      <input type="text" id="usuario" placeholder="Nombre de usuario" required>
+      <input type="text" id="asunto" placeholder="Asunto del problema" required>
+      <select id="prioridad">
+        <option>Media</option><option>Alta</option><option>Baja</option>
+      </select>
+      <button type="submit">Crear Ticket</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:1rem">Tickets Activos</h3>
+    <table>
+      <thead><tr><th>ID</th><th>Usuario</th><th>Asunto</th><th>Prioridad</th><th>Estado</th></tr></thead>
+      <tbody id="ticketList"><tr><td colspan="5">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+
+async function loadMetrics() {
+  try {
+    const r = await fetch(`${API}/metrics`);
+    const m = await r.json();
+    document.getElementById('m-total').textContent = m.total ?? 0;
+    document.getElementById('m-abiertos').textContent = m.abiertos ?? 0;
+    document.getElementById('m-cerrados').textContent = m.cerrados ?? 0;
+    document.getElementById('m-alta').textContent = m.alta ?? 0;
+  } catch (e) { console.error(e); }
+}
+
+async function loadTickets() {
+  try {
+    const r = await fetch(`${API}/tickets`);
+    const tickets = await r.json();
+    const tbody = document.getElementById('ticketList');
+    if (!tickets.length) { tbody.innerHTML = '<tr><td colspan="5">Sin tickets</td></tr>'; return; }
+    tbody.innerHTML = tickets.map(t => `
+      <tr>
+        <td>#${t.id}</td><td>${t.usuario}</td><td>${t.asunto}</td>
+        <td><span class="badge ${t.prioridad.toLowerCase()}">${t.prioridad}</span></td>
+        <td>${t.estado}</td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('ticketList').innerHTML = '<tr><td colspan="5">Error al cargar</td></tr>';
+  }
+}
+
+document.getElementById('ticketForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await fetch(`${API}/tickets`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      usuario: document.getElementById('usuario').value,
+      asunto: document.getElementById('asunto').value,
+      prioridad: document.getElementById('prioridad').value
+    })
+  });
+  e.target.reset();
+  loadTickets(); loadMetrics();
+});
+
+loadMetrics(); loadTickets();
+setInterval(() => { loadMetrics(); loadTickets(); }, 10000);
+</script>
+</body>
+</html>

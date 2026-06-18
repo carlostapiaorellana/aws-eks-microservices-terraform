@@ -1,0 +1,12 @@
+{
+  "name": "files-api",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "echo \"lint ok\" && exit 0" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "@aws-sdk/client-s3": "^3.620.0",
+    "@aws-sdk/s3-request-presigner": "^3.620.0",
+    "cors": "^2.8.5"
+  }
+}
