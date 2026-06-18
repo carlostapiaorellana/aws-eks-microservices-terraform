@@ -41,10 +41,10 @@ output "cloudfront_domain" {
 output "cloudfront_distribution_id" { value = module.cloudfront.distribution_id }
 
 # ---- GitHub OIDC ----
-output "github_actions_role_arn" {
-  description = "ARN del rol para GitHub Actions (ponlo como secret/variable AWS_ROLE_ARN)"
-  value       = module.github_oidc.role_arn
-}
+#output "github_actions_role_arn" {
+#  description = "ARN del rol para GitHub Actions (ponlo como secret/variable AWS_ROLE_ARN)"
+#  value       = module.github_oidc.role_arn
+#}
 
 # ---- Comandos utiles ----
 output "useful_commands" {

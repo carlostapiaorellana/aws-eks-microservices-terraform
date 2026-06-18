@@ -14,9 +14,14 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
+  CLUSTER_NAME: lab-it-support-lab-eks
   ECR_PREFIX: lab-it-support-lab
+  FRONTEND_BUCKET_PREFIX: lab-it-support-lab-frontend
 
 jobs:
+  # ============================================================
+  # JOB 1: build + scan + push de los 3 microservicios
+  # ============================================================
   build-and-push:
     runs-on: ubuntu-latest
     strategy:
@@ -40,13 +45,12 @@ jobs:
           cd app/${{ matrix.service }}
           docker build -t ${{ matrix.service }}:${{ github.sha }} .
 
-      # Escaneo de seguridad con Trivy ANTES de pushear
       - name: Trivy security scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ matrix.service }}:${{ github.sha }}
           format: table
-          exit-code: '0'         # '1' para bloquear si hay vulnerabilidades
+          exit-code: '0'
           severity: CRITICAL,HIGH
 
       - name: Tag & Push to ECR
@@ -57,6 +61,9 @@ jobs:
           docker push $REPO:${{ github.sha }}
           docker push $REPO:latest
 
+  # ============================================================
+  # JOB 2: aplicar manifests K8s + rollout
+  # ============================================================
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -69,12 +76,53 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name lab-it-support-lab-eks
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
 
-      - name: Rollout restart (pull latest images)
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      # Aplica manifests solo si cambiaron (idempotente)
+      - name: Aplicar manifests K8s
         run: |
-          kubectl rollout restart deployment/tickets-api
-          kubectl rollout restart deployment/files-api
-          kubectl rollout restart deployment/metrics-api
-          kubectl rollout status deployment/tickets-api --timeout=120s
+          kubectl apply -f k8s-manifests/ || echo "Algunos manifests requieren valores reales (REEMPLAZAR_*)"
+
+      - name: Rollout restart (toma la imagen :latest nueva)
+        run: |
+          kubectl rollout restart deployment/tickets-api -n default
+          kubectl rollout restart deployment/files-api -n default
+          kubectl rollout restart deployment/metrics-api -n default
+          kubectl rollout status deployment/tickets-api -n default --timeout=180s
+          kubectl rollout status deployment/files-api -n default --timeout=180s
+          kubectl rollout status deployment/metrics-api -n default --timeout=180s
+
+  # ============================================================
+  # JOB 3: subir frontend a S3 + invalidar CloudFront
+  # ============================================================
+  deploy-frontend:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Subir frontend a S3 e invalidar CloudFront
+        run: |
+          BUCKET=$(aws s3 ls | grep "${{ env.FRONTEND_BUCKET_PREFIX }}" | awk '{print $3}' | head -1)
+          if [ -z "$BUCKET" ]; then
+            echo "No se encontro el bucket frontend, saltando."
+            exit 0
+          fi
+          echo "Subiendo a s3://$BUCKET"
+          aws s3 cp app/frontend/index.html "s3://$BUCKET/index.html" --content-type "text/html"
+
+          DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment!=null]|[?contains(Comment,'lab-it-support')].Id" --output text | head -1)
+          if [ -n "$DIST" ]; then
+            echo "Invalidando CloudFront $DIST"
+            aws cloudfront create-invalidation --distribution-id "$DIST" --paths "/*"
+          fi

@@ -1,0 +1,64 @@
+name: 'Infra - Apply'
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: lab-it-support-lab-eks
+  TF_LOG_GROUP: /aws/eks/lab-it-support-lab-eks/cluster
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      # Fix preventivo: si un intento previo dejo el log group huerfano,
+      # lo importamos para evitar el error "already exists". Si no existe
+      # o ya esta en el state, el comando falla silenciosamente y seguimos.
+      - name: Import log group si existe (evita 'already exists')
+        run: |
+          if aws logs describe-log-groups --log-group-name-prefix "${{ env.TF_LOG_GROUP }}" --region ${{ env.AWS_REGION }} --query "logGroups[?logGroupName=='${{ env.TF_LOG_GROUP }}']" --output text | grep -q "${{ env.TF_LOG_GROUP }}"; then
+            echo "Log group existe, intentando importar al state..."
+            terraform import "module.eks.aws_cloudwatch_log_group.cluster" "${{ env.TF_LOG_GROUP }}" || echo "Ya esta en el state o no se pudo importar, continuando..."
+          else
+            echo "Log group no existe, Terraform lo creara limpio."
+          fi
+
+      - name: Terraform Plan
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Mostrar outputs
+        run: terraform output

@@ -175,9 +175,9 @@ module "cloudtrail" {
   name_prefix = local.name_prefix
 }
 
-module "github_oidc" {
-  source      = "./modules/github_oidc"
-  name_prefix = local.name_prefix
-  github_org  = var.github_org
-  github_repo = var.github_repo
-}
+#module "github_oidc" {
+#  source      = "./modules/github_oidc"
+#  name_prefix = local.name_prefix
+#  github_org  = var.github_org
+#  github_repo = var.github_repo
+#}
